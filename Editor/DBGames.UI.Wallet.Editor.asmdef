@@ -1,0 +1,18 @@
+{
+    "name": "DBGames.UI.Wallet.Editor",
+    "rootNamespace": "DBGames.UI.Wallet.Editor",
+    "references": [
+        "GUID:e396c6a7224e45c44b637dae84acd72f"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
