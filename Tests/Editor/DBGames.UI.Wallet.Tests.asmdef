@@ -1,8 +1,12 @@
 {
     "name": "DBGames.UI.Wallet.Tests",
     "rootNamespace": "DBGames.UI.Wallet.Tests",
-    "references": [],
-    "includePlatforms": [],
+    "references": [
+        "GUID:e396c6a7224e45c44b637dae84acd72f"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": false,

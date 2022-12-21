@@ -1,19 +1,19 @@
 using Newtonsoft.Json;
+using System;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Threading.Tasks;
 using System.Web.Cors;
 using UnityEngine;
-using UnityEngine.Events;
 
 namespace DBGames.UI.Wallet {
 
     /// <summary>
-    /// Provides an external browser interface for the user to authenticate ownership of a wallet
-    /// using Phantom.
+    /// Used to launch the wallet authentication web app.
     /// </summary>
-    public class WalletLink : MonoBehaviour {
+    public class WalletAuthenticator {
 
         #region Types
 
@@ -27,17 +27,15 @@ namespace DBGames.UI.Wallet {
 
         #region Properties
 
-        [SerializeField]
-        [Tooltip("If true, wallet connection events are logged in the console.")]
-        private bool useLogging;
+        /// <summary>
+        /// If true, wallet connection events are logged in the console.
+        /// </summary>
+        private readonly bool useLogging;
 
-        [SerializeField]
-        [Tooltip("Called when the user's wallet address is received, must be set as a dynamic parameter.")]
-        private UnityEvent<string> onWalletReceived;
-
-        // TODO: Discuss whether we should point to a generic DB Games x Phantom Auth app, or
-        // provide a skeleton React App alongside this package.
-        private const string authURL = "https://auth.re-evolution.io";
+        /// <summary>
+        /// The URL to expect a <see cref="WalletResponse"/> from.
+        /// </summary>
+        private readonly string authURL;
 
         /// <summary>
         /// The time in milliseconds that the browser is allowed to cache a preflight request.
@@ -50,49 +48,70 @@ namespace DBGames.UI.Wallet {
         private const string listenerIP = "http://127.0.0.1";
 
         /// <summary>
-        /// Whether the <see cref="HttpListener"/> is currently running or not.
+        /// Whether this object is currently listening for an HTTPListenerRequest.
         /// </summary>
         private bool isListening = false;
 
         #endregion
 
-        #region Public 
+        #region Constructors
 
-        public async void StartListeningForWalletResponse() {
-            Application.OpenURL(authURL);
-            if (useLogging) {
-                Debug.Log("Authenticator Opened.");
-            }
+        public WalletAuthenticator(bool useLogging, string authURL) {
+            this.useLogging = useLogging;
+            this.authURL = authURL;
+        }
+
+        #endregion
+
+        #region Public
+
+        /// <summary>
+        /// Triggers this object to listen for a response if not already listening.
+        /// </summary>
+        /// <returns>The user's public key, or null if none is received or already listening.</returns>
+        public async Task<string> ListenForWalletResponse(
+            Action<string> portHandler
+        ) {
             if (!isListening) {
-                string publicKey = await ListenForWalletResponse();
-                if (publicKey != null) {
-                    onWalletReceived?.Invoke(publicKey);
+                // Find port
+                string port = GetFreeTcpPort().ToString();
+
+                // Open HTTPListener
+                HttpListener listener = new HttpListener();
+                string listenerURL = string.Format("{0}:{1}/", listenerIP, port);
+                listener.Prefixes.Add(listenerURL);
+                listener.Start();
+                if (useLogging) {
+                    Debug.Log($"Listening for response on port {port}");
                 }
+
+                // Execute port callback once listener is running.
+                portHandler?.Invoke(port);
+
+                isListening = true;
+                // Wait for response from authenticator web app.
+                return await CaptureRequest(useLogging, listener);
             }
+            return null;
         }
 
         #endregion
 
         #region Private
 
-        /// <summary>
-        /// Starts listening for a POST request from the wallet authenticator web app.
-        /// </summary>
-        /// <returns>The user's public key contained within the POST request.</returns>
-        private async Task<string> ListenForWalletResponse() {
-            isListening = true;
-
+        private async Task<string> CaptureRequest(bool useLogging, HttpListener activeListener) {
             // Create and start listener on open port.
-            HttpListener listener = new HttpListener();
-            listener.Prefixes.Add(listenerIP + ":8080/");
-            listener.Start();
+            // TODO: Find free port before listening.
+            if (activeListener == null) {
+                activeListener.Prefixes.Add(listenerIP + ":8080/");
+                activeListener.Start();
 
-            if (useLogging) {
-                Debug.Log($"Listening for response on port {"8080"}");
+                if (useLogging) {
+                    Debug.Log($"Listening for response on port {"8080"}");
+                }
             }
 
-            // Wait for response from authenticator web app.
-            HttpListenerContext ctx = await listener.GetContextAsync();
+            HttpListenerContext ctx = await activeListener.GetContextAsync();
             HttpListenerRequest request = ctx.Request;
             HttpListenerResponse response = ctx.Response;
             string publicKey = null;
@@ -100,16 +119,18 @@ namespace DBGames.UI.Wallet {
             // Send necessary HTTP response.
             if (request.HttpMethod == HttpMethod.Options.Method) {
                 SendPreflightResponse(response);
+                return await CaptureRequest(useLogging, activeListener);
             } else if (request.HttpMethod == HttpMethod.Post.Method) {
-                publicKey = GetPublicKey(request);
+                publicKey = GetPublicKey(request, useLogging);
                 SendPostResponse(response);
+
+                activeListener.Close();
+                isListening = false;
+                if (useLogging) {
+                    Debug.Log("Listener closed");
+                }
             }
 
-            listener.Close();
-            if (useLogging) {
-                Debug.Log("Listener closed");
-            }
-            isListening = false;
             return publicKey;
         }
 
@@ -120,15 +141,17 @@ namespace DBGames.UI.Wallet {
         /// <returns>
         /// The user's public key contained in the request, or null if the request is invalid.
         /// </returns>
-        private string GetPublicKey(HttpListenerRequest request) {
+        private string GetPublicKey(HttpListenerRequest request, bool useLogging) {
             string[] origin = request.Headers.GetValues(CorsConstants.Origin);
             if (origin.Length > 0) {
                 // Check response originated from the correct source, this is an extra layer of
                 // security incase this response is sent without using CORS.
+
+                // TODO: Add layer to protect against forgery attacks.
                 if (origin[0] == authURL) {
                     string body = new StreamReader(request.InputStream).ReadToEnd();
                     WalletResponse wallet = JsonConvert.DeserializeObject<WalletResponse>(body);
-                    
+
                     if (useLogging) {
                         Debug.Log($"Found wallet: {wallet.publicKey}");
                     }
@@ -149,11 +172,14 @@ namespace DBGames.UI.Wallet {
         /// <param name="response">The response to send.</param>
         private void SendPostResponse(HttpListenerResponse response) {
             response.AddHeader(
-                CorsConstants.AccessControlAllowOrigin, 
+                CorsConstants.AccessControlAllowOrigin,
                 authURL
             );
             response.StatusCode = (int)HttpStatusCode.OK;
             response.Close();
+            if (useLogging) {
+                Debug.Log("Sent POST response.");
+            }
         }
 
         /// <summary>
@@ -163,21 +189,33 @@ namespace DBGames.UI.Wallet {
         /// <param name="response">The response to send.</param>
         private void SendPreflightResponse(HttpListenerResponse response) {
             response.AddHeader(
-                CorsConstants.AccessControlAllowOrigin, 
+                CorsConstants.AccessControlAllowOrigin,
                 authURL
             );
             response.AddHeader(
-                CorsConstants.AccessControlAllowMethods, 
+                CorsConstants.AccessControlAllowMethods,
                 HttpMethod.Post.Method
             );
             response.AddHeader(
-                CorsConstants.AccessControlMaxAge, 
+                CorsConstants.AccessControlMaxAge,
                 preflightTimeout.ToString()
             );
             response.StatusCode = (int)HttpStatusCode.OK;
             response.Close();
+            if (useLogging) {
+                Debug.Log("Sent PREFLIGHT response.");
+            }
+        }
+
+        private int GetFreeTcpPort() {
+            TcpListener l = new TcpListener(IPAddress.Loopback, 0);
+            l.Start();
+            int port = ((IPEndPoint)l.LocalEndpoint).Port;
+            l.Stop();
+            return port;
         }
 
         #endregion
+
     }
 }
