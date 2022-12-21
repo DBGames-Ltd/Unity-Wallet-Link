@@ -1,4 +1,7 @@
 using Newtonsoft.Json;
+using System.Threading.Tasks;
+using Unity.Services.Authentication;
+using Unity.Services.Core;
 using UnityEngine;
 using UnityEngine.Events;
 
@@ -47,7 +50,12 @@ namespace DBGames.UI.Wallet {
         /// executes <see cref="onWalletReceived"/> if a public key is received.
         /// </summary>
         public async void AuthenticateWallet() {
-            string publicKey = await authenticator.ListenForWalletResponse(OpenAuthenticator);
+            await GenerateSessionToken();
+            string sessionToken = AuthenticationService.Instance.AccessToken;
+
+            string publicKey = await authenticator.ListenForWalletResponse(port => {
+                OpenAuthenticator(port, sessionToken);
+            });
             if (publicKey != null) {
                 onWalletReceived?.Invoke(publicKey);
             }
@@ -65,8 +73,34 @@ namespace DBGames.UI.Wallet {
 
         #region Private
 
-        private void OpenAuthenticator(string port) {
-            string appURL = string.Format("{0}?port={1}", authURL, port);
+        private async Task GenerateSessionToken() {
+            try {
+                await AuthenticationService.Instance.SignInAnonymouslyAsync();
+                Debug.Log("Sign in anonymously succeeded!");
+
+                // Shows how to get the playerID
+                Debug.Log($"PlayerID: {AuthenticationService.Instance.PlayerId}");
+
+            } catch (AuthenticationException ex) {
+                // Compare error code to AuthenticationErrorCodes
+                // Notify the player with the proper error message
+                Debug.LogException(ex);
+            } catch (RequestFailedException ex) {
+                // Compare error code to CommonErrorCodes
+                // Notify the player with the proper error message
+                Debug.LogException(ex);
+            }
+        }
+
+        private void OpenAuthenticator(string port, string sessionToken) {
+            string appURL = string.Format(
+                "{0}?{1}={2}&{3}={4}", 
+                authURL, 
+                nameof(port),
+                port,
+                nameof(sessionToken),
+                sessionToken
+            );
             Application.OpenURL(appURL);
             if (useLogging) {
                 Debug.Log("Authenticator started.");

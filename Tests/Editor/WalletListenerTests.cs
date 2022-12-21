@@ -1,7 +1,10 @@
+using System.Collections;
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Cors;
 using NUnit.Framework;
+using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace DBGames.UI.Wallet.Tests {
     public class WalletAuthenticatorTests {
@@ -30,10 +33,10 @@ namespace DBGames.UI.Wallet.Tests {
         /// <summary>
         /// Tests whether the correct public key is sent when a valid request is received.
         /// </summary>
-        [Test]
-        public async void WalletAuthenticatorTests_TestSuccesfulResponse() {
+        [UnityTest]
+        public IEnumerator WalletAuthenticatorTests_TestSuccesfulResponse() {
             WalletAuthenticator subject = new WalletAuthenticator(true, authURL);
-            string publicKey = await subject.ListenForWalletResponse(async port => {
+            Task<string> publicKey = subject.ListenForWalletResponse(async port => {
                 client.DefaultRequestHeaders.Add(CorsConstants.Origin, authURL);
                 HttpResponseMessage response = await SendPostRequest(port);
 
@@ -41,16 +44,17 @@ namespace DBGames.UI.Wallet.Tests {
                     response.EnsureSuccessStatusCode();
                 });
             });
-            Assert.AreEqual(publicKey, testKey);
+            yield return new WaitUntil(() => publicKey.IsCompleted);
+            Assert.AreEqual(testKey, publicKey.Result);
         }
 
         /// <summary>
         /// Tests for a valid preflight response being sent when a preflight request is made.
         /// </summary>
-        [Test]
-        public async void WalletAuthenticatorTests_TestPreflightResponse() {
+        [UnityTest]
+        public IEnumerator WalletAuthenticatorTests_TestPreflightResponse() {
             WalletAuthenticator subject = new WalletAuthenticator(true, authURL);
-            string publicKey = await subject.ListenForWalletResponse(async port => {
+            Task<string> publicKey = subject.ListenForWalletResponse(async port => {
                 HttpResponseMessage preflight = await SendPreflightRequest(port);
 
                 Assert.DoesNotThrow(delegate {
@@ -64,16 +68,17 @@ namespace DBGames.UI.Wallet.Tests {
                     response.EnsureSuccessStatusCode();
                 });
             });
-            Assert.AreEqual(publicKey, testKey);
+            yield return new WaitUntil(() => publicKey.IsCompleted);
+            Assert.AreEqual(testKey, publicKey.Result);
         }
 
         /// <summary>
         /// Tests for a null wallet response when a request comes from an invalid origin.
         /// </summary>
-        [Test]
-        public async void WalletAuthenticatorTests_TestInvalidOrigin() {
+        [UnityTest]
+        public IEnumerator WalletAuthenticatorTests_TestInvalidOrigin() {
             WalletAuthenticator subject = new WalletAuthenticator(true, authURL);
-            string publicKey = await subject.ListenForWalletResponse(async port => {
+            Task<string> publicKey = subject.ListenForWalletResponse(async port => {
                 client.DefaultRequestHeaders.Add(CorsConstants.Origin, invalidOriginURL);
                 HttpResponseMessage response = await SendPostRequest(port);
 
@@ -81,7 +86,8 @@ namespace DBGames.UI.Wallet.Tests {
                     response.EnsureSuccessStatusCode();
                 });
             });
-            Assert.Null(publicKey);
+            yield return new WaitUntil(() => publicKey.IsCompleted);
+            Assert.Null(publicKey.Result);
         }
 
         #endregion

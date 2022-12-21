@@ -21,6 +21,9 @@ namespace DBGames.UI.Wallet {
 
             [JsonProperty]
             internal string publicKey;
+
+            [JsonProperty]
+            internal string sessionToken;
         }
 
         #endregion
