@@ -1,7 +1,4 @@
 using Newtonsoft.Json;
-using System.Threading.Tasks;
-using Unity.Services.Authentication;
-using Unity.Services.Core;
 using UnityEngine;
 using UnityEngine.Events;
 
@@ -25,11 +22,11 @@ namespace DBGames.UI.Wallet {
 
         #region Properties
 
-        // TODO: Discuss whether we should point to a generic DB Games x Phantom Auth app, or
+        // TODO: Discuss whether we should point to a generic DB Games Auth app, or
         // provide a skeleton React App alongside this package.
         [SerializeField]
         [Tooltip("The URL to expect an authorization response from.")]
-        private string authURL = "http://localhost:3000/";//"https://auth.re-evolution.io";
+        private string authURL = "http://localhost:3000/";
 
         [SerializeField]
         [Tooltip("If true, wallet connection events are logged in the console.")]
