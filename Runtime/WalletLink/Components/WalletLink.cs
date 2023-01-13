@@ -1,4 +1,3 @@
-using Newtonsoft.Json;
 using UnityEngine;
 using UnityEngine.Events;
 
@@ -9,16 +8,6 @@ namespace DBGames.UI.Wallet {
     /// using Phantom.
     /// </summary>
     public class WalletLink : MonoBehaviour {
-
-        #region Types
-
-        struct WalletResponse {
-
-            [JsonProperty]
-            internal string publicKey;
-        }
-
-        #endregion
 
         #region Properties
 
@@ -34,7 +23,7 @@ namespace DBGames.UI.Wallet {
 
         [SerializeField]
         [Tooltip("Called when the user's wallet address is received, must be set as a dynamic parameter.")]
-        private UnityEvent<string> onWalletReceived;
+        private UnityEvent<WalletResponse> onWalletReceived;
 
         private WalletAuthenticator authenticator;
 
@@ -47,11 +36,11 @@ namespace DBGames.UI.Wallet {
         /// executes <see cref="onWalletReceived"/> if a public key is received.
         /// </summary>
         public async void AuthenticateWallet() {
-            string publicKey = await authenticator.ListenForWalletResponse(port => {
+            var response = await authenticator.ListenForWalletResponse(port => {
                 OpenAuthenticator(port);
             });
-            if (publicKey != null) {
-                onWalletReceived?.Invoke(publicKey);
+            if (response != null && response.IsVerified) {
+                onWalletReceived?.Invoke(response);
             }
         }
 

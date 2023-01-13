@@ -1,6 +1,4 @@
-using Chaos.NaCl;
 using Newtonsoft.Json;
-using Solana.Unity.Wallet.Utilities;
 using System;
 using System.IO;
 using System.Net;
@@ -64,7 +62,7 @@ namespace DBGames.UI.Wallet {
         /// <returns>
         /// The user's public key, or null if none is received or already listening.
         /// </returns>
-        public async Task<string> ListenForWalletResponse(
+        public async Task<WalletResponse> ListenForWalletResponse(
             Action<string> portHandler
         ) {
             if (!isListening) {
@@ -102,7 +100,7 @@ namespace DBGames.UI.Wallet {
         /// </param>
         /// <param name="useLogging">Whether to log significant events.</param>
         /// <returns>A authenticated public key or null if the request is invalid.</returns>
-        private async Task<string> CaptureRequest(HttpListener activeListener, bool useLogging) {
+        private async Task<WalletResponse> CaptureRequest(HttpListener activeListener, bool useLogging) {
             if (activeListener == null) {
                 Debug.LogError("No active HTTPListener.");
                 return null;
@@ -110,16 +108,16 @@ namespace DBGames.UI.Wallet {
             HttpListenerContext ctx = await activeListener.GetContextAsync();
             HttpListenerRequest request = ctx.Request;
             HttpListenerResponse response = ctx.Response;
-            string publicKey = null;
+            WalletResponse wallet = null;
 
             // Send necessary HTTP response.
             if (request.HttpMethod == HttpMethod.Options.Method) {
                 SendPreflightResponse(response);
                 return await CaptureRequest(activeListener, useLogging);
             } else if (request.HttpMethod == HttpMethod.Post.Method) {
-                publicKey = GetPublicKey(request, useLogging);
+                wallet = GetWalletResponse(request, useLogging);
                 if (useLogging) {
-                    Debug.Log($"Found wallet: {publicKey}");
+                    Debug.Log($"Found wallet: {wallet}");
                 }
                 SendPostResponse(response);
                 activeListener.Close();
@@ -129,7 +127,7 @@ namespace DBGames.UI.Wallet {
                 }
             }
 
-            return publicKey;
+            return wallet;
         }
 
         /// <summary>
@@ -140,23 +138,14 @@ namespace DBGames.UI.Wallet {
         /// <returns>
         /// The user's public key contained in the request, or null if the request is invalid.
         /// </returns>
-        private string GetPublicKey(HttpListenerRequest request, bool useLogging) {
+        private WalletResponse GetWalletResponse(HttpListenerRequest request, bool useLogging) {
             string[] origin = request.Headers.GetValues(CorsConstants.Origin);
             // Check response originated from the correct source, this is an extra layer of
             // security incase this response is sent without using CORS.
             if (origin.Length > 0 && origin[0] == authURL) {
                 string body = new StreamReader(request.InputStream).ReadToEnd();
                 WalletResponse response = JsonConvert.DeserializeObject<WalletResponse>(body);
-
-                var pK = Encoders.Base58.EncodeData(response.PublicKey);
-
-                // Verify message signature matches public key.
-                bool verified = Ed25519.Verify(
-                    response.MsgSig, 
-                    response.Message,
-                    response.PublicKey
-                );
-                return verified ? pK : null;
+                return response;
             }
 
             if (useLogging) {

@@ -1,7 +1,9 @@
 using System.Collections;
 using System.Net.Http;
+using System.Text;
 using System.Threading.Tasks;
 using System.Web.Cors;
+using Newtonsoft.Json;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -14,7 +16,11 @@ namespace DBGames.UI.Wallet.Tests {
         private const string authURL = "https://www.Test.com";
         private const string invalidOriginURL = "https://www.invalid.com";
         private const string listenerIP = "http://127.0.0.1";
-        private const string testKey = "Test1234";
+        private readonly WalletResponse testResponse = new() {
+            PublicKey = Encoding.UTF8.GetBytes("Test1234"),
+            MsgSig = new byte[] { },
+            Message = new byte[] { }
+        };
         private readonly HttpClient client = new();
 
         #endregion
@@ -36,7 +42,7 @@ namespace DBGames.UI.Wallet.Tests {
         [UnityTest]
         public IEnumerator WalletAuthenticatorTests_TestSuccesfulResponse() {
             WalletAuthenticator subject = new(true, authURL);
-            Task<string> publicKey = subject.ListenForWalletResponse(async port => {
+            Task<WalletResponse> wallet = subject.ListenForWalletResponse(async port => {
                 client.DefaultRequestHeaders.Add(CorsConstants.Origin, authURL);
                 HttpResponseMessage response = await SendPostRequest(port);
 
@@ -44,8 +50,8 @@ namespace DBGames.UI.Wallet.Tests {
                     response.EnsureSuccessStatusCode();
                 });
             });
-            yield return new WaitUntil(() => publicKey.IsCompleted);
-            Assert.AreEqual(testKey, publicKey.Result);
+            yield return new WaitUntil(() => wallet.IsCompleted);
+            Assert.AreEqual(testResponse.PublicKey, wallet.Result.PublicKey);
         }
 
         /// <summary>
@@ -54,7 +60,7 @@ namespace DBGames.UI.Wallet.Tests {
         [UnityTest]
         public IEnumerator WalletAuthenticatorTests_TestPreflightResponse() {
             WalletAuthenticator subject = new(true, authURL);
-            Task<string> publicKey = subject.ListenForWalletResponse(async port => {
+            Task<WalletResponse> wallet = subject.ListenForWalletResponse(async port => {
                 HttpResponseMessage preflight = await SendPreflightRequest(port);
 
                 Assert.DoesNotThrow(delegate {
@@ -68,8 +74,8 @@ namespace DBGames.UI.Wallet.Tests {
                     response.EnsureSuccessStatusCode();
                 });
             });
-            yield return new WaitUntil(() => publicKey.IsCompleted);
-            Assert.AreEqual(testKey, publicKey.Result);
+            yield return new WaitUntil(() => wallet.IsCompleted);
+            Assert.AreEqual(testResponse.PublicKey, wallet.Result.PublicKey);
         }
 
         /// <summary>
@@ -78,7 +84,7 @@ namespace DBGames.UI.Wallet.Tests {
         [UnityTest]
         public IEnumerator WalletAuthenticatorTests_TestInvalidOrigin() {
             WalletAuthenticator subject = new(true, authURL);
-            Task<string> publicKey = subject.ListenForWalletResponse(async port => {
+            Task<WalletResponse> wallet = subject.ListenForWalletResponse(async port => {
                 client.DefaultRequestHeaders.Add(CorsConstants.Origin, invalidOriginURL);
                 HttpResponseMessage response = await SendPostRequest(port);
 
@@ -86,21 +92,17 @@ namespace DBGames.UI.Wallet.Tests {
                     response.EnsureSuccessStatusCode();
                 });
             });
-            yield return new WaitUntil(() => publicKey.IsCompleted);
-            Assert.Null(publicKey.Result);
+            yield return new WaitUntil(() => wallet.IsCompleted);
+            Assert.Null(wallet.Result);
         }
 
         #endregion
 
         #region Helper
 
-        private string MakePublicKeyResponse() {
-            return string.Format("{{\"publicKey\":\"{0}\"}}", testKey);
-        }
-
         private async Task<HttpResponseMessage> SendPostRequest(string port) {
             string requestURL = string.Format("{0}:{1}/", listenerIP, port);
-            string requestJson = MakePublicKeyResponse();
+            string requestJson = JsonConvert.SerializeObject(testResponse);
             HttpContent content = new StringContent(requestJson);
             return await client.PostAsync(requestURL, content);
         }
