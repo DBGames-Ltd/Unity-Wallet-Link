@@ -29,7 +29,7 @@ namespace DBGames.UI.Wallet {
         // provide a skeleton React App alongside this package.
         [SerializeField]
         [Tooltip("The URL to expect an authorization response from.")]
-        private string authURL = "https://auth.re-evolution.io";
+        private string authURL = "http://localhost:3000/";//"https://auth.re-evolution.io";
 
         [SerializeField]
         [Tooltip("If true, wallet connection events are logged in the console.")]
@@ -50,11 +50,8 @@ namespace DBGames.UI.Wallet {
         /// executes <see cref="onWalletReceived"/> if a public key is received.
         /// </summary>
         public async void AuthenticateWallet() {
-            await GenerateSessionToken();
-            string sessionToken = AuthenticationService.Instance.AccessToken;
-
             string publicKey = await authenticator.ListenForWalletResponse(port => {
-                OpenAuthenticator(port, sessionToken);
+                OpenAuthenticator(port);
             });
             if (publicKey != null) {
                 onWalletReceived?.Invoke(publicKey);
@@ -73,33 +70,12 @@ namespace DBGames.UI.Wallet {
 
         #region Private
 
-        private async Task GenerateSessionToken() {
-            try {
-                await AuthenticationService.Instance.SignInAnonymouslyAsync();
-                Debug.Log("Sign in anonymously succeeded!");
-
-                // Shows how to get the playerID
-                Debug.Log($"PlayerID: {AuthenticationService.Instance.PlayerId}");
-
-            } catch (AuthenticationException ex) {
-                // Compare error code to AuthenticationErrorCodes
-                // Notify the player with the proper error message
-                Debug.LogException(ex);
-            } catch (RequestFailedException ex) {
-                // Compare error code to CommonErrorCodes
-                // Notify the player with the proper error message
-                Debug.LogException(ex);
-            }
-        }
-
-        private void OpenAuthenticator(string port, string sessionToken) {
+        private void OpenAuthenticator(string port) {
             string appURL = string.Format(
-                "{0}?{1}={2}&{3}={4}", 
+                "{0}?{1}={2}", 
                 authURL, 
                 nameof(port),
-                port,
-                nameof(sessionToken),
-                sessionToken
+                port
             );
             Application.OpenURL(appURL);
             if (useLogging) {

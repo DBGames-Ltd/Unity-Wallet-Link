@@ -1,4 +1,6 @@
+using Chaos.NaCl;
 using Newtonsoft.Json;
+using Solana.Unity.Wallet.Utilities;
 using System;
 using System.IO;
 using System.Net;
@@ -14,19 +16,6 @@ namespace DBGames.UI.Wallet {
     /// Used to launch the wallet authentication web app.
     /// </summary>
     public class WalletAuthenticator {
-
-        #region Types
-
-        struct WalletResponse {
-
-            [JsonProperty]
-            internal string publicKey;
-
-            [JsonProperty]
-            internal string sessionToken;
-        }
-
-        #endregion
 
         #region Properties
 
@@ -71,7 +60,10 @@ namespace DBGames.UI.Wallet {
         /// <summary>
         /// Triggers this object to listen for a response if not already listening.
         /// </summary>
-        /// <returns>The user's public key, or null if none is received or already listening.</returns>
+        /// <param name="portHandler">An action to execute when a free TCP port is found.</param>
+        /// <returns>
+        /// The user's public key, or null if none is received or already listening.
+        /// </returns>
         public async Task<string> ListenForWalletResponse(
             Action<string> portHandler
         ) {
@@ -80,7 +72,7 @@ namespace DBGames.UI.Wallet {
                 string port = GetFreeTcpPort().ToString();
 
                 // Open HTTPListener
-                HttpListener listener = new HttpListener();
+                HttpListener listener = new();
                 string listenerURL = string.Format("{0}:{1}/", listenerIP, port);
                 listener.Prefixes.Add(listenerURL);
                 listener.Start();
@@ -90,10 +82,9 @@ namespace DBGames.UI.Wallet {
 
                 // Execute port callback once listener is running.
                 portHandler?.Invoke(port);
-
                 isListening = true;
                 // Wait for response from authenticator web app.
-                return await CaptureRequest(useLogging, listener);
+                return await CaptureRequest(listener, useLogging);
             }
             return null;
         }
@@ -102,18 +93,20 @@ namespace DBGames.UI.Wallet {
 
         #region Private
 
-        private async Task<string> CaptureRequest(bool useLogging, HttpListener activeListener) {
-            // Create and start listener on open port.
-            // TODO: Find free port before listening.
+        /// <summary>
+        /// Uses <see cref="HttpListener"/> to listen for requests and extract a public key from a
+        /// <see cref="WalletResponse"/>.
+        /// </summary>
+        /// <param name="activeListener">
+        /// An active HTTPListener listening for <see cref="WalletResponse"/>s.
+        /// </param>
+        /// <param name="useLogging">Whether to log significant events.</param>
+        /// <returns>A authenticated public key or null if the request is invalid.</returns>
+        private async Task<string> CaptureRequest(HttpListener activeListener, bool useLogging) {
             if (activeListener == null) {
-                activeListener.Prefixes.Add(listenerIP + ":8080/");
-                activeListener.Start();
-
-                if (useLogging) {
-                    Debug.Log($"Listening for response on port {"8080"}");
-                }
+                Debug.LogError("No active HTTPListener.");
+                return null;
             }
-
             HttpListenerContext ctx = await activeListener.GetContextAsync();
             HttpListenerRequest request = ctx.Request;
             HttpListenerResponse response = ctx.Response;
@@ -122,11 +115,13 @@ namespace DBGames.UI.Wallet {
             // Send necessary HTTP response.
             if (request.HttpMethod == HttpMethod.Options.Method) {
                 SendPreflightResponse(response);
-                return await CaptureRequest(useLogging, activeListener);
+                return await CaptureRequest(activeListener, useLogging);
             } else if (request.HttpMethod == HttpMethod.Post.Method) {
                 publicKey = GetPublicKey(request, useLogging);
+                if (useLogging) {
+                    Debug.Log($"Found wallet: {publicKey}");
+                }
                 SendPostResponse(response);
-
                 activeListener.Close();
                 isListening = false;
                 if (useLogging) {
@@ -141,25 +136,27 @@ namespace DBGames.UI.Wallet {
         /// Processes a request from the authenticator web app, and extracts the user's public key.
         /// </summary>
         /// <param name="request">The request to process.</param>
+        /// <param name="useLogging">Whether significant events should be logged.</param>
         /// <returns>
         /// The user's public key contained in the request, or null if the request is invalid.
         /// </returns>
         private string GetPublicKey(HttpListenerRequest request, bool useLogging) {
             string[] origin = request.Headers.GetValues(CorsConstants.Origin);
-            if (origin.Length > 0) {
-                // Check response originated from the correct source, this is an extra layer of
-                // security incase this response is sent without using CORS.
+            // Check response originated from the correct source, this is an extra layer of
+            // security incase this response is sent without using CORS.
+            if (origin.Length > 0 && origin[0] == authURL) {
+                string body = new StreamReader(request.InputStream).ReadToEnd();
+                WalletResponse response = JsonConvert.DeserializeObject<WalletResponse>(body);
 
-                // TODO: Add layer to protect against forgery attacks.
-                if (origin[0] == authURL) {
-                    string body = new StreamReader(request.InputStream).ReadToEnd();
-                    WalletResponse wallet = JsonConvert.DeserializeObject<WalletResponse>(body);
+                var pK = Encoders.Base58.EncodeData(response.PublicKey);
 
-                    if (useLogging) {
-                        Debug.Log($"Found wallet: {wallet.publicKey}");
-                    }
-                    return wallet.publicKey;
-                }
+                // Verify message signature matches public key.
+                bool verified = Ed25519.Verify(
+                    response.MsgSig, 
+                    response.Message,
+                    response.PublicKey
+                );
+                return verified ? pK : null;
             }
 
             if (useLogging) {
@@ -210,8 +207,12 @@ namespace DBGames.UI.Wallet {
             }
         }
 
+        /// <summary>
+        /// Finds a free TCP port.
+        /// </summary>
+        /// <returns>An integer representation of the first free TCP port.</returns>
         private int GetFreeTcpPort() {
-            TcpListener l = new TcpListener(IPAddress.Loopback, 0);
+            TcpListener l = new(IPAddress.Loopback, 0);
             l.Start();
             int port = ((IPEndPoint)l.LocalEndpoint).Port;
             l.Stop();

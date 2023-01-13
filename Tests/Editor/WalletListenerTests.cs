@@ -15,7 +15,7 @@ namespace DBGames.UI.Wallet.Tests {
         private const string invalidOriginURL = "https://www.invalid.com";
         private const string listenerIP = "http://127.0.0.1";
         private const string testKey = "Test1234";
-        private readonly HttpClient client = new HttpClient();
+        private readonly HttpClient client = new();
 
         #endregion
 
@@ -35,7 +35,7 @@ namespace DBGames.UI.Wallet.Tests {
         /// </summary>
         [UnityTest]
         public IEnumerator WalletAuthenticatorTests_TestSuccesfulResponse() {
-            WalletAuthenticator subject = new WalletAuthenticator(true, authURL);
+            WalletAuthenticator subject = new(true, authURL);
             Task<string> publicKey = subject.ListenForWalletResponse(async port => {
                 client.DefaultRequestHeaders.Add(CorsConstants.Origin, authURL);
                 HttpResponseMessage response = await SendPostRequest(port);
@@ -53,7 +53,7 @@ namespace DBGames.UI.Wallet.Tests {
         /// </summary>
         [UnityTest]
         public IEnumerator WalletAuthenticatorTests_TestPreflightResponse() {
-            WalletAuthenticator subject = new WalletAuthenticator(true, authURL);
+            WalletAuthenticator subject = new(true, authURL);
             Task<string> publicKey = subject.ListenForWalletResponse(async port => {
                 HttpResponseMessage preflight = await SendPreflightRequest(port);
 
@@ -77,7 +77,7 @@ namespace DBGames.UI.Wallet.Tests {
         /// </summary>
         [UnityTest]
         public IEnumerator WalletAuthenticatorTests_TestInvalidOrigin() {
-            WalletAuthenticator subject = new WalletAuthenticator(true, authURL);
+            WalletAuthenticator subject = new(true, authURL);
             Task<string> publicKey = subject.ListenForWalletResponse(async port => {
                 client.DefaultRequestHeaders.Add(CorsConstants.Origin, invalidOriginURL);
                 HttpResponseMessage response = await SendPostRequest(port);
@@ -107,7 +107,7 @@ namespace DBGames.UI.Wallet.Tests {
 
         private async Task<HttpResponseMessage> SendPreflightRequest(string port) {
             string requestURL = string.Format("{0}:{1}/", listenerIP, port);
-            HttpRequestMessage request = new HttpRequestMessage(
+            HttpRequestMessage request = new(
                 HttpMethod.Options, 
                 requestURL
             );
